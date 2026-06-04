@@ -1,0 +1,10 @@
+# Generated deployment artifacts — zip when needed for WP upload, don't commit
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp

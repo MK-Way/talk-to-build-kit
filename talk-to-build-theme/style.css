@@ -1,0 +1,204 @@
+/*
+Theme Name: Talk-to-Build
+Theme URI: https://talktobuild.ai
+Author: Talk-to-Build
+Author URI: https://talktobuild.ai
+Description: Minimal, future-proof WordPress theme with a Canvas (Blank) page template for AI-powered build pipelines — zero theme interference, raw HTML output. Standard pages use WordPress block editor with clean defaults.
+Version: 1.0.0
+Requires at least: 6.0
+Tested up to: 7.0
+Requires PHP: 7.4
+License: GNU General Public License v2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: talk-to-build
+
+== Description ==
+Built for AI-native build workflows:
+- Canvas template: Serves raw HTML with no theme wrapper (for Figma Decode / AI code pipelines)
+- Standard template: Clean, minimal layout with block editor support (for client self-service)
+- Zero external dependencies. No frameworks. No build tools.
+- Future-proof: minimal PHP, no deprecated functions, block editor ready.
+*/
+
+/* ========== ACCESSIBILITY ========== */
+.skip-link {
+  position: absolute;
+  left: -9999rem;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 9999;
+}
+
+.skip-link:focus {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  padding: 8px 16px;
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  overflow: visible;
+}
+
+/* ========== BASE RESET ========== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #1a1a2e;
+  background: #ffffff;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+a {
+  color: #1a1a2e;
+  text-decoration: underline;
+}
+
+a:hover {
+  opacity: 0.8;
+}
+
+/* ========== LAYOUT ========== */
+.site {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.site-content {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  width: 100%;
+}
+
+/* ========== HEADER ========== */
+.site-header {
+  border-bottom: 1px solid #e2e2e8;
+  padding: 20px 0;
+}
+
+.site-header .container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.site-title a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.site-description {
+  display: none;
+}
+
+/* ========== NAVIGATION ========== */
+.main-navigation ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 24px;
+}
+
+.main-navigation a {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+}
+
+/* ========== CONTENT ========== */
+.entry-title {
+  font-size: 32px;
+  font-weight: 800;
+  margin-bottom: 24px;
+  line-height: 1.2;
+}
+
+.entry-content {
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.entry-content h2 {
+  font-size: 24px;
+  margin: 32px 0 16px;
+}
+
+.entry-content h3 {
+  font-size: 20px;
+  margin: 24px 0 12px;
+}
+
+.entry-content p {
+  margin-bottom: 16px;
+}
+
+/* ========== FOOTER ========== */
+.site-footer {
+  border-top: 1px solid #e2e2e8;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* ========== WORDPRESS BLOCKS ========== */
+.wp-block-group {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+  .site-header .container {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .main-navigation ul {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .site-content {
+    padding: 24px 16px;
+  }
+
+  .entry-title {
+    font-size: 24px;
+  }
+}
