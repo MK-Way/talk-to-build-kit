@@ -1218,16 +1218,30 @@ ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd ~/files && \
 
 ### Step 7: Verify
 
+**First — verify the DB, then the frontend.** Do not rely on curl alone — Nginx cache can serve a stale page even when the DB is correct.
+
 ```bash
-# HTTP 200
+# 1. Confirm _elementor_data is in the DB and has content
+wp --path=<SITE_PATH> post meta get <PAGE_ID> _elementor_data | head -c 500
+# Must return a JSON array starting with [{...}] — if empty or missing, the push failed
+
+# 2. Confirm _elementor_edit_mode is set
+wp --path=<SITE_PATH> post meta get <PAGE_ID> _elementor_edit_mode
+# Must return: builder
+
+# 3. HTTP 200
 curl -s -o /dev/null -w "%{http_code}" https://<SITE>/<SLUG>/
 
-# Elementor is rendering (not WP default)
-curl -s https://<SITE>/<SLUG>/ | grep -i 'elementor'
+# 4. Native Elementor widgets are rendering (not just html widgets)
+curl -s https://<SITE>/<SLUG>/ | grep -c 'elementor-widget-'
+# Should be > 2 (header + footer html widgets are 2 — page content adds more)
 
-# Page is editable in Elementor admin
+# 5. Page is editable in Elementor admin
 # Log into WP Admin → Pages → Edit with Elementor → confirm widgets load
 ```
+
+**If step 1 returns empty**: the push failed — re-run the push script and check for MySQL errors.
+**If step 1 has content but step 4 shows only 2 widgets**: Nginx cache is stale — run `wp nginx-helper purge-all` and recheck.
 
 **Final check**: open the page in Elementor editor and confirm each section is editable. Spot-check 3 widgets — click to edit, confirm text/colour is accessible.
 
