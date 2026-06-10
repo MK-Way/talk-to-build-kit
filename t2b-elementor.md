@@ -627,6 +627,28 @@ Now list the pages you are about to migrate from the Netlify HTML (by their URLs
 
 Use the `post_name` column (not the title) as the `page_slug` value in the push script. If the Netlify URL and WP slug differ (e.g. `/about/` → `about-us`), use the **WP slug** — that keeps the existing page's URL and internal links intact.
 
+**When there is any ambiguity, stop and ask before generating JSON.** Present the mapping to the user in this format and wait for confirmation:
+
+```
+Before I proceed, I need to confirm the page mapping.
+
+Here are the existing WP pages I found:
+  ID 5  — "About Us"   (slug: about-us)
+  ID 8  — "Contact"    (slug: contact)
+  ID 11 — "Services"   (slug: services)
+
+Here is how I'm planning to match them to the Netlify pages:
+
+  ✅  /services/     →  services    (exact match — will UPDATE)
+  ⚠️  /about/        →  about-us?   (slug differs — is this the same page?)
+  ⚠️  /contact-us/   →  contact?    (slug differs — is this the same page?)
+  🆕  /pricing/      →  (no match)  — will CREATE a new page. Confirm?
+
+Please confirm, correct, or skip any of these before I continue.
+```
+
+Only proceed once the user has confirmed the full mapping. A wrong match updates the wrong page; a missed match creates a duplicate.
+
 ### Step 2: Analyse the HTML
 
 Read the full HTML file. Before generating any JSON:
