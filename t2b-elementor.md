@@ -75,6 +75,15 @@ When analysing HTML, map each element to the most appropriate native Elementor w
 | Star rating | Star Rating | `star-rating` |
 | Complex/animated/SVG sections | HTML (fallback) | `html` |
 
+> 📋 **When you encounter a `<form>` in the source HTML — stop and ask before proceeding:**
+> ```
+> Found a form in this section. How should I handle it?
+> 1. Elementor Pro Form widget (native — client can edit fields, labels, actions in the visual editor)
+> 2. HTML embed (use only for third-party forms: HubSpot, Typeform, Calendly, etc. that must keep their own JS)
+> Which do you prefer?
+> ```
+> Do not assume HTML. Elementor Pro Form is almost always the right choice for contact/lead forms.
+
 > ❌ **NEVER use the `html` widget for regular page content.**
 > The entire purpose of this directive is to produce pages the client can edit in Elementor.
 > An `html` widget is a black box — the client cannot change text, colours, or images without knowing HTML.
