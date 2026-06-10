@@ -649,7 +649,45 @@ Please confirm, correct, or skip any of these before I continue.
 
 Only proceed once the user has confirmed the full mapping. A wrong match updates the wrong page; a missed match creates a duplicate.
 
-### Step 1c: Check & Install talk-to-build-theme
+### Step 1c: Staging Pre-flight Cleanup (staging clone only)
+
+**Run this when the staging site is a clone of a production site.** Production sites have their own Elementor Theme Builder templates (header, footer, popups). These conflict with the new ones we are about to build. This step wipes them cleanly without touching posts, pages, media, or any content.
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "
+mysql -u <DB_USER> -p'<DB_PASS>' <DB_NAME> <<'SQL'
+
+-- Remove all existing Theme Builder templates (header/footer/popup/single)
+-- Posts and pages are NOT affected — only elementor_library entries
+DELETE pm FROM <PREFIX>postmeta pm
+JOIN <PREFIX>posts p ON pm.post_id = p.ID
+WHERE p.post_type = 'elementor_library';
+
+DELETE FROM <PREFIX>posts WHERE post_type = 'elementor_library';
+
+SQL
+echo 'Theme Builder templates cleared'
+"
+```
+
+Then flush so Elementor stops trying to apply the deleted templates:
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "
+  wp --path=~/files elementor flush_css && \
+  wp --path=~/files cache flush && \
+  echo 'Cache flushed — clean slate ready'
+"
+```
+
+**What this deletes:** all `elementor_library` posts (Theme Builder header, footer, popups, single templates, archive templates).
+**What this keeps:** all pages, posts, media, menus, plugin settings, Elementor Pro licence, WP users.
+
+After this step, Phase 0 creates the new header/footer from scratch with no conflicts.
+
+---
+
+### Step 1d: Check & Install talk-to-build-theme
 
 Before generating any JSON, confirm the theme is installed and active. Run:
 
