@@ -592,6 +592,41 @@ grep -E 'DB_NAME|DB_USER|DB_PASSWORD|table_prefix|WP_REDIS' ~/files/wp-config.ph
 wp --path=~/files plugin get elementor --field=version
 ```
 
+### Step 1b: Inventory Existing Pages (migration only)
+
+**Run this before generating any JSON** whenever the WP site already has pages (staging clone, existing site). This gives you the exact slugs to use in the push script and prevents both duplicates and missed updates.
+
+```bash
+wp --path=~/files post list \
+  --post_type=page \
+  --post_status=publish,draft \
+  --fields=ID,post_title,post_name \
+  --format=table
+```
+
+Example output:
+```
++-----+------------------+--------------+
+| ID  | post_title       | post_name    |
++-----+------------------+--------------+
+| 2   | Sample Page      | sample-page  |
+| 5   | About Us         | about-us     |
+| 8   | Contact          | contact      |
+| 11  | Services         | services     |
++-----+------------------+--------------+
+```
+
+Now list the pages you are about to migrate from the Netlify HTML (by their URLs), and build a **slug mapping table** before writing any code:
+
+| Netlify URL | WP page found? | `page_slug` to use | Action |
+|---|---|---|---|
+| `/about/` | ✅ "About Us" | `about-us` | UPDATE existing |
+| `/contact/` | ✅ "Contact" | `contact` | UPDATE existing |
+| `/services/` | ✅ "Services" | `services` | UPDATE existing |
+| `/pricing/` | ❌ not found | `pricing` | INSERT new |
+
+Use the `post_name` column (not the title) as the `page_slug` value in the push script. If the Netlify URL and WP slug differ (e.g. `/about/` → `about-us`), use the **WP slug** — that keeps the existing page's URL and internal links intact.
+
 ### Step 2: Analyse the HTML
 
 Read the full HTML file. Before generating any JSON:
