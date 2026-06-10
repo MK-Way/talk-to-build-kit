@@ -853,7 +853,7 @@ In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...
 **Conversion rules:**
 - Every colour value → hex (convert rgb/rgba if needed)
 - Font sizes → always in `px`, extracted from inline style or class
-- Padding/margin → extracted from CSS, applied to container settings
+- **Padding → MANDATORY on every outer container (section level).** Read the source CSS for that section's wrapper and extract `padding-top`, `padding-right`, `padding-bottom`, `padding-left`. Never leave `padding=None` on a section — a missing padding makes content bleed to the screen edge. If the source has no explicit padding, use a sensible default (e.g. `80px` top/bottom, `40px` left/right) and note it.
 - `<strong>` / `<em>` inside paragraphs → preserved in `text-editor` HTML content
 - Background images → use `background_background: "classic"` + `background_image: { "url": "..." }`
 - Gradient backgrounds → `background_background: "gradient"` + `background_gradient_color` + `background_gradient_color_b`
@@ -1246,6 +1246,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
 | 2026-06-10 | `background-position` and `object-position` mismatches on sections and images are a common source of visual bugs not caught by colour/font checks | Step 2.1 now extracts bg_positions, bg_sizes, object_positions, object_fits from source; Step 4.1 verifies them before every push |
+| 2026-06-10 | Section padding left as `None` in `make_container` caused content to bleed to screen edges — no padding = content starts at 0px from the viewport edge | Padding is now mandatory on every outer container: extract from source CSS, never use default `None` for section-level containers |
 
 ---
 
