@@ -292,6 +292,295 @@ Append `_tablet` and `_mobile` to any setting key for responsive overrides:
 
 ---
 
+## Phase 0: Theme Builder — Header & Footer (Full-Site Migrations)
+
+**Run this phase first for any full-site migration.** Skip it only when adding a single new page to an existing site that already has a working header/footer.
+
+The header and footer must be built once in Elementor Theme Builder and set to display on the Entire Site. All pages then use `elementor_header_footer` so the shared header/footer appears automatically — you never duplicate nav or footer in page JSON.
+
+---
+
+### Step 0a: Analyse Header & Footer HTML
+
+From the source HTML (Netlify site), extract:
+
+**Header:**
+- Logo: image URL or text
+- Navigation links: labels + URLs
+- Any CTA button in the header
+- Background colour + height
+
+**Footer:**
+- Logo (if repeated)
+- Footer nav columns (labels + URLs)
+- Copyright text
+- Social media links + platforms
+
+Make a list of these before generating any JSON.
+
+---
+
+### Step 0b: Create the WP Navigation Menu
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP>
+
+# Create menu and add items (replace with actual links from the site)
+wp --path=~/files menu create "Main Navigation"
+wp --path=~/files menu item add-custom "Main Navigation" "Home"     "/"
+wp --path=~/files menu item add-custom "Main Navigation" "About"    "/about/"
+wp --path=~/files menu item add-custom "Main Navigation" "Services" "/services/"
+wp --path=~/files menu item add-custom "Main Navigation" "Contact"  "/contact/"
+
+# Assign to primary location (if theme registers one)
+wp --path=~/files menu location assign "Main Navigation" primary
+
+# Confirm
+wp --path=~/files menu list
+```
+
+If the site has a footer menu, create a second one: `"Footer Navigation"`.
+
+---
+
+### Step 0c: Generate Header & Footer JSON
+
+Same Python approach as page content — build the JSON locally, write to files.
+
+**Header example** — logo left, nav centre, CTA right:
+
+```python
+import json, secrets
+
+def uid(): return secrets.token_hex(4)
+
+header_data = [
+    {
+        "id": uid(), "elType": "container", "isInner": False,
+        "settings": {
+            "flex_direction": "row",
+            "flex_align_items": "center",
+            "content_width": "boxed",
+            "background_background": "classic",
+            "background_color": "#ffffff",
+            "padding": {"unit": "px", "top": "20", "right": "40", "bottom": "20", "left": "40", "isLinked": False},
+            "width": {"unit": "px", "size": 1200}
+        },
+        "elements": [
+            # Logo (left)
+            {
+                "id": uid(), "elType": "widget", "widgetType": "theme-site-logo",
+                "isInner": False,
+                "settings": {"width": {"unit": "px", "size": 140}, "align": "left"},
+                "elements": []
+            },
+            # Nav menu (centre — flex-grow)
+            {
+                "id": uid(), "elType": "widget", "widgetType": "nav-menu",
+                "isInner": False,
+                "settings": {
+                    "menu": "main-navigation",  # WP menu slug
+                    "layout": "horizontal",
+                    "align_items": "center",
+                    "typography_font_size": {"unit": "px", "size": 15},
+                    "color": "#1a1a2e",
+                    "color_hover": "#0073aa"
+                },
+                "elements": []
+            },
+            # CTA button (right)
+            {
+                "id": uid(), "elType": "widget", "widgetType": "button",
+                "isInner": False,
+                "settings": {
+                    "text": "Get Started",
+                    "link": {"url": "/contact/"},
+                    "align": "right",
+                    "button_text_color": "#ffffff",
+                    "background_color": "#0073aa",
+                    "border_radius": {"unit": "px", "top": 6, "right": 6, "bottom": 6, "left": 6},
+                    "padding": {"unit": "px", "top": "10", "right": "24", "bottom": "10", "left": "24", "isLinked": False}
+                },
+                "elements": []
+            }
+        ]
+    }
+]
+
+with open('header-data.json', 'w', encoding='utf-8') as f:
+    json.dump(header_data, f, ensure_ascii=False)
+print('header-data.json written')
+```
+
+**Footer example** — two columns: links left, copyright + socials right:
+
+```python
+footer_data = [
+    {
+        "id": uid(), "elType": "container", "isInner": False,
+        "settings": {
+            "flex_direction": "row",
+            "flex_align_items": "flex-start",
+            "content_width": "boxed",
+            "background_background": "classic",
+            "background_color": "#0b1220",
+            "padding": {"unit": "px", "top": "60", "right": "40", "bottom": "40", "left": "40", "isLinked": False}
+        },
+        "elements": [
+            # Left: logo + footer nav
+            {
+                "id": uid(), "elType": "container", "isInner": True,
+                "settings": {"flex_direction": "column", "width": {"unit": "%", "size": 50}},
+                "elements": [
+                    {
+                        "id": uid(), "elType": "widget", "widgetType": "theme-site-logo",
+                        "isInner": False,
+                        "settings": {"width": {"unit": "px", "size": 120}, "align": "left"},
+                        "elements": []
+                    },
+                    {
+                        "id": uid(), "elType": "widget", "widgetType": "nav-menu",
+                        "isInner": False,
+                        "settings": {
+                            "menu": "footer-navigation",
+                            "layout": "vertical",
+                            "color": "#aaaaaa",
+                            "color_hover": "#ffffff",
+                            "typography_font_size": {"unit": "px", "size": 14}
+                        },
+                        "elements": []
+                    }
+                ]
+            },
+            # Right: socials + copyright
+            {
+                "id": uid(), "elType": "container", "isInner": True,
+                "settings": {"flex_direction": "column", "flex_align_items": "flex-end", "width": {"unit": "%", "size": 50}},
+                "elements": [
+                    {
+                        "id": uid(), "elType": "widget", "widgetType": "social-icons",
+                        "isInner": False,
+                        "settings": {
+                            "social_icon_list": [
+                                {"_id": uid(), "social_icon": {"value": "fab fa-instagram", "library": "fa-brands"}, "link": {"url": "https://instagram.com/yourprofile"}},
+                                {"_id": uid(), "social_icon": {"value": "fab fa-linkedin", "library": "fa-brands"}, "link": {"url": "https://linkedin.com/company/yourco"}}
+                            ],
+                            "icon_color": "#aaaaaa",
+                            "icon_hover_color": "#ffffff",
+                            "icon_size": {"unit": "px", "size": 20}
+                        },
+                        "elements": []
+                    },
+                    {
+                        "id": uid(), "elType": "widget", "widgetType": "text-editor",
+                        "isInner": False,
+                        "settings": {
+                            "editor": "<p style=\"color:#777777;font-size:13px;\">© 2026 Company Name. All rights reserved.</p>",
+                            "align": "right"
+                        },
+                        "elements": []
+                    }
+                ]
+            }
+        ]
+    }
+]
+
+with open('footer-data.json', 'w', encoding='utf-8') as f:
+    json.dump(footer_data, f, ensure_ascii=False)
+print('footer-data.json written')
+```
+
+---
+
+### Step 0d: Push Header & Footer Templates to DB
+
+Theme Builder templates are `elementor_library` posts, not regular pages.
+
+```python
+import subprocess, json
+
+def push_theme_template(json_file, title, template_type, db_user, db_pass, db_name, prefix):
+    with open(json_file, 'r', encoding='utf-8') as f:
+        raw_json = f.read()
+    escaped = raw_json.replace('\\', '\\\\').replace("'", "\\'")
+    slug = title.lower().replace(' ', '-')
+
+    sql = f"""
+INSERT INTO {prefix}posts
+  (post_author, post_date, post_date_gmt, post_content, post_title,
+   post_excerpt, post_status, comment_status, ping_status, post_name,
+   post_type, post_modified, post_modified_gmt, to_ping, pinged, post_content_filtered)
+VALUES
+  (1, NOW(), NOW(), '', '{title}', '', 'publish', 'closed', 'closed',
+   '{slug}', 'elementor_library', NOW(), NOW(), '', '', '');
+
+SET @tpl_id = LAST_INSERT_ID();
+
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES (@tpl_id, '_elementor_data',          '{escaped}');
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES (@tpl_id, '_elementor_edit_mode',     'builder');
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES (@tpl_id, '_elementor_template_type', '{template_type}');
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES (@tpl_id, '_elementor_conditions',    '["include/general"]');
+"""
+
+    sql_file = f'/tmp/insert-{template_type}.sql'
+    with open(sql_file, 'w') as f:
+        f.write(sql)
+
+    result = subprocess.run(
+        ['mysql', '-u', db_user, '-p' + db_pass, db_name],
+        stdin=open(sql_file), capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print(f'SUCCESS: {template_type} template "{title}" inserted')
+    else:
+        print('ERROR:', result.stderr)
+
+# Push header
+push_theme_template('header-data.json', 'Main Header', 'header',
+                    db_user='<DB_USER>', db_pass='<DB_PASS>', db_name='<DB_NAME>', prefix='<PREFIX>')
+
+# Push footer
+push_theme_template('footer-data.json', 'Main Footer', 'footer',
+                    db_user='<DB_USER>', db_pass='<DB_PASS>', db_name='<DB_NAME>', prefix='<PREFIX>')
+```
+
+```bash
+scp -i <YOUR_SSH_KEY_PATH> header-data.json footer-data.json push-theme-builder.py \
+    <SITE_USER>@<IP>:/tmp/
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "python3 /tmp/push-theme-builder.py"
+```
+
+---
+
+### Step 0e: Flush & Verify Theme Builder
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd ~/files && \
+  wp elementor flush_css && \
+  redis-cli --user <REDIS_USER> --pass '<REDIS_PASS>' FLUSHALL && \
+  wp cache flush"
+```
+
+Then open the site URL — the header and footer should appear on every page.
+
+**If the conditions don't apply automatically:**
+Go to WP Admin → Templates → Theme Builder → click the Header template → click **Display Conditions** → add **Entire Site** → Save. Repeat for Footer. This is a 10-second manual step and is more reliable than guessing the options cache format.
+
+---
+
+### Step 0f: Set Page Template for All Pages
+
+Now that Theme Builder is providing the header/footer, all pages (Steps 1–7 below) must use:
+
+```
+_wp_page_template = "elementor_header_footer"
+```
+
+Do **not** use `elementor_canvas` — that bypasses Theme Builder entirely and pages will have no header or footer.
+
+---
+
 ## Workflow Steps
 
 ### Step 1: Gather Site Credentials
@@ -554,18 +843,6 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 
 ---
 
-## Theme Builder (Header & Footer in Elementor)
-
-If the client wants their header and footer built in Elementor (not the WP theme):
-
-1. In Elementor Pro: Templates → Theme Builder → Header (New)
-2. Build the nav using the Nav Menu widget (Pro) — assign a WP menu
-3. Set display condition: Entire Site
-4. Repeat for Footer
-
-This replaces the WP theme header/footer entirely. The page template for all pages becomes `elementor_canvas` since Elementor provides the header/footer.
-
----
 
 ## Error Handling
 
@@ -578,6 +855,8 @@ This replaces the WP theme header/footer entirely. The page template for all pag
 | Images not loading | External URLs in JSON or wrong upload path | Re-run localization, check `/wp-content/uploads/<PROJECT>/` |
 | Elementor editor crashes on page open | Malformed JSON in `_elementor_data` | Validate JSON with `python3 -c "import json; json.load(open('elementor-data.json'))"` |
 | Page shows WP default (not Elementor) | `_elementor_edit_mode` missing or wrong template | Check all 3 postmeta: `_elementor_data`, `_elementor_edit_mode`, `_wp_page_template` |
+| Theme Builder header/footer not showing | Display condition not applied or cache stale | Flush with `wp elementor flush_css`; if still missing, set condition manually in WP Admin → Templates → Theme Builder |
+| Pages have no header/footer at all | Wrong page template — `elementor_canvas` used instead of `elementor_header_footer` | Update `_wp_page_template` postmeta to `elementor_header_footer` for all affected pages |
 
 ---
 
@@ -588,6 +867,7 @@ This replaces the WP theme header/footer entirely. The page template for all pag
 | 2026-06-09 | Elementor stores layout as `_elementor_data` JSON array in postmeta — `post_content` is empty | Push script writes to postmeta, not post_content |
 | 2026-06-09 | `wp elementor flush_css` is mandatory after DB insert — Redis/Nginx flush alone is not enough | Added as Step 6, before cache flush |
 | 2026-06-09 | Elementor 3.6+ uses Containers (flexbox) — older Section/Column format still works but containers are the standard | Directive uses containers; fallback to section/column if server runs Elementor < 3.6 |
+| 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
 
 ---
 
