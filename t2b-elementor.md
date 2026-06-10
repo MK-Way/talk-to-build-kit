@@ -541,6 +541,47 @@ Go to WP Admin → Templates → Theme Builder → click the Header template →
 
 ---
 
+### Step 0e.1: Fix Elementor Header Wrapper (always run)
+
+**This step is mandatory — do not skip.** Elementor wraps every Theme Builder template in a `<div class="elementor-location-header">` block element. If the original header CSS uses `position: fixed` or `position: absolute`, this wrapper pushes page content down instead of letting the header float over it.
+
+**Check the original header CSS** — scan the source HTML for the header/nav element:
+
+```bash
+grep -i 'position\s*:\s*fixed\|position\s*:\s*absolute' \
+  "<LOCAL_HTML_PATH>/index.html"
+```
+
+**If `position: fixed` or `position: absolute` is found** → the header floats over content in the original design. Add this CSS fix to the `<style>` block inside the header HTML widget:
+
+```css
+/* Force Elementor's wrapper out of normal block flow — required when
+   the original header uses position: fixed or absolute */
+.elementor-location-header {
+    position: fixed;   /* use absolute if original was absolute */
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 1000;
+    pointer-events: auto;
+}
+```
+
+**Then add padding compensation for pages without a full-bleed hero** — so the header does not overlap regular page content. Add to the footer HTML widget or a global CSS widget:
+
+```css
+/* Pages where content starts immediately (no hero overlap) need top padding */
+body:not(.home) .elementor-location-header + * {
+    padding-top: <HEADER_HEIGHT>px;  /* measure from source — typically 70-100px */
+}
+```
+
+Or handle per-page: add a spacer/padding to the first section of every non-hero page when building those pages in Steps 2+.
+
+**If `position: static` / `position: relative` (normal flow)** → no fix needed. The Elementor wrapper behaves correctly by default.
+
+---
+
 ### Step 0f: Set Page Template for All Pages
 
 Now that Theme Builder is providing the header/footer, all pages (Steps 1–7 below) must use:
@@ -996,6 +1037,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-09 | Elementor 3.6+ uses Containers (flexbox) — older Section/Column format still works but containers are the standard | Directive uses containers; fallback to section/column if server runs Elementor < 3.6 |
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
+| 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 
 ---
 
