@@ -649,6 +649,35 @@ Please confirm, correct, or skip any of these before I continue.
 
 Only proceed once the user has confirmed the full mapping. A wrong match updates the wrong page; a missed match creates a duplicate.
 
+### Step 1c: Check & Install talk-to-build-theme
+
+Before generating any JSON, confirm the theme is installed and active. Run:
+
+```bash
+wp --path=~/files theme list --format=table
+```
+
+**If `talk-to-build` is listed as active** → proceed.
+
+**If not installed or not active** → install directly from GitHub:
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "
+  cd /tmp && \
+  curl -sL https://github.com/MK-Way/talk-to-build-kit/archive/refs/heads/main.tar.gz \
+       -o t2b.tar.gz && \
+  tar -xzf t2b.tar.gz && \
+  cp -r talk-to-build-kit-main/talk-to-build-theme ~/files/wp-content/themes/ && \
+  rm -rf t2b.tar.gz talk-to-build-kit-main && \
+  wp --path=~/files theme activate talk-to-build && \
+  echo 'talk-to-build-theme installed and activated'
+"
+```
+
+This always installs the latest version from the `main` branch of `MK-Way/talk-to-build-kit`. No manual upload needed — any server, any project.
+
+---
+
 ### Step 2: Analyse the HTML
 
 Read the full HTML file. Before generating any JSON:
