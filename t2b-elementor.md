@@ -743,6 +743,46 @@ Read the full HTML file. Before generating any JSON:
 3. **Plan the widget map** — for each section, decide which Elementor widgets to use. List this plan before writing any JSON.
 4. **Flag complex sections** — anything with heavy CSS animations, SVG, or JS that cannot be mapped to native widgets → mark for `html` fallback widget.
 
+### Step 2.1: Extract Design Tokens (run once per project)
+
+Before generating any page JSON, extract the full design system from the source CSS and save it as `design-tokens.json`. This file is used to verify every page after generation — catching colour/font mismatches before push.
+
+```python
+import re, json, glob
+
+def extract_design_tokens(source_folder):
+    """Read all HTML files and extract every colour and font size used."""
+    colors = set()
+    font_sizes = set()
+    font_families = []
+
+    html_files = glob.glob(f"{source_folder}/*.html")
+    for path in html_files:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        colors.update(re.findall(r'#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b', content))
+        colors.update(re.findall(r'rgba?\([^)]+\)', content))
+        font_sizes.update(re.findall(r'font-size\s*:\s*([\d.]+(?:px|rem|em))', content))
+        font_families += re.findall(r'font-family\s*:\s*([^;}{]+)', content)
+
+    tokens = {
+        "colors": sorted(colors),
+        "font_sizes": sorted(font_sizes),
+        "font_families": list(dict.fromkeys(f.strip().strip("'\"") for f in font_families))[:6]
+    }
+
+    with open('design-tokens.json', 'w') as f:
+        json.dump(tokens, f, indent=2)
+
+    print(f"Design tokens extracted from {len(html_files)} files")
+    print(f"  {len(tokens['colors'])} colours, {len(tokens['font_sizes'])} font sizes")
+    return tokens
+
+tokens = extract_design_tokens("C:/path/to/source/html/folder")
+```
+
+Run this once. Commit `design-tokens.json` to the project repo — it is the style reference for the entire migration.
+
 ### Step 3: Localize Images
 
 Before generating JSON, scan for external images and localize them (same as `/t2b-wordpress` Step 2–3):
@@ -850,6 +890,68 @@ print(f'Generated {len(page_data)} sections → elementor-data.json')
 ```
 
 Run locally, review the JSON, then proceed to push.
+
+### Step 4.1: Style Verification (run before every push)
+
+After generating the JSON for a page and **before pushing to the server**, verify that every colour and font size in the JSON exists in `design-tokens.json`. This catches copy-paste errors, wrong hex values, and off-brand colours before they go live.
+
+```python
+import json, re
+
+def verify_page_styles(json_file, tokens_file='design-tokens.json'):
+    with open(json_file, 'r', encoding='utf-8') as f:
+        page_data = json.load(f)
+    with open(tokens_file, 'r', encoding='utf-8') as f:
+        tokens = json.load(f)
+
+    known_colors = set(c.lower() for c in tokens['colors'])
+    known_sizes  = set(tokens['font_sizes'])
+    issues = []
+
+    COLOR_KEYS = ['color', 'text_color', 'title_color', 'background_color',
+                  'button_text_color', 'border_color', 'icon_color',
+                  'heading_color', 'tab_color']
+    SIZE_KEYS  = ['typography_font_size', 'font_size']
+
+    def walk(el, path=''):
+        label = el.get('widgetType') or el.get('elType', '?')
+        settings = el.get('settings', {})
+
+        for key in COLOR_KEYS:
+            val = settings.get(key)
+            if isinstance(val, str) and val.strip():
+                if val.lower() not in known_colors:
+                    issues.append(f"  COLOUR  [{label}] {key}: '{val}' — not in design tokens")
+
+        for key in SIZE_KEYS:
+            val = settings.get(key)
+            if isinstance(val, dict):
+                size_str = f"{val.get('size')}{val.get('unit','px')}"
+                if size_str not in known_sizes:
+                    issues.append(f"  SIZE    [{label}] {key}: {size_str} — not in design tokens")
+
+        for child in el.get('elements', []):
+            walk(child, path + '/' + label)
+
+    for section in page_data:
+        walk(section)
+
+    if issues:
+        print(f"⚠️  {len(issues)} style issue(s) in {json_file}:")
+        for i in issues: print(i)
+        print("\nCorrect these before pushing — or confirm they are intentional overrides.")
+        return False
+    else:
+        print(f"✅  {json_file} — all styles match design tokens")
+        return True
+
+# Run before push:
+verify_page_styles('generated/pages/home-data.json')
+```
+
+**If issues are found:** correct the JSON values to match the source design tokens. Only proceed to push when the verification passes — or when you have explicitly confirmed a value is an intentional override (e.g. a hover state or accessibility improvement).
+
+---
 
 ### Step 5: Push to WordPress Database
 
