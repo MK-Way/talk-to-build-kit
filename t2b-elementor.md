@@ -538,11 +538,15 @@ ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "python3 /tmp/push-theme-builder.py"
 ### Step 0e: Flush & Verify Theme Builder
 
 ```bash
-ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd ~/files && \
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd <SITE_PATH> && \
   wp elementor flush_css && \
+  wp cache flush && \
   redis-cli --user <REDIS_USER> --pass '<REDIS_PASS>' FLUSHALL && \
-  wp cache flush"
+  wp nginx-helper purge-all 2>/dev/null || true && \
+  echo 'Phase 0 flush complete'"
 ```
+
+> ⚠️ **The `wp nginx-helper purge-all` is mandatory here.** Nginx full-page cache is the most common reason the new header/footer does not appear after Phase 0 — the old cached page is served even though the DB is correct. Without this purge, the browser shows the stale version and it looks like the template didn't apply. Always run it; the `|| true` means it is safe even if the plugin is not installed.
 
 Then open the site URL — the header and footer should appear on every page.
 
@@ -1258,6 +1262,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-09 | `wp elementor flush_css` is mandatory after DB insert — Redis/Nginx flush alone is not enough | Added as Step 6, before cache flush |
 | 2026-06-09 | Elementor 3.6+ uses Containers (flexbox) — older Section/Column format still works but containers are the standard | Directive uses containers; fallback to section/column if server runs Elementor < 3.6 |
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
+| 2026-06-10 | After Phase 0, Nginx full-page cache serves stale page — new header/footer doesn't appear even though DB is correct | `wp nginx-helper purge-all` added to Step 0e flush sequence (mandatory, not just Step 6) |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
