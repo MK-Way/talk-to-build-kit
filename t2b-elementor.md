@@ -858,6 +858,41 @@ In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...
 - Background images → use `background_background: "classic"` + `background_image: { "url": "..." }`
 - Gradient backgrounds → `background_background: "gradient"` + `background_gradient_color` + `background_gradient_color_b`
 
+**When Elementor widget settings are not enough — use `custom_css`:**
+
+Elementor widget settings cover common properties but not everything. When the source design uses `letter-spacing`, `line-height`, `text-transform`, `object-position`, `z-index`, or other CSS not directly available as a widget setting, add a `custom_css` key to that element's `settings`. Elementor scopes it automatically to that element via `.selector`.
+
+```json
+{
+  "id": "a1b2c3d4",
+  "elType": "widget",
+  "widgetType": "heading",
+  "settings": {
+    "title": "Stop Thinking If,",
+    "header_size": "h1",
+    "title_color": "#ffffff",
+    "typography_font_size": {"unit": "px", "size": 72},
+    "custom_css": ".selector { letter-spacing: -2px; line-height: 1.05; text-transform: uppercase; }"
+  },
+  "elements": []
+}
+```
+
+For containers/sections, `custom_css` scopes to the section wrapper:
+
+```json
+{
+  "elType": "container",
+  "settings": {
+    "background_background": "classic",
+    "background_color": "#0b1220",
+    "custom_css": ".selector { background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('/wp-content/uploads/rcas/hero.jpg') center/cover no-repeat !important; }"
+  }
+}
+```
+
+**Rule:** Extract ALL CSS properties from the source element. Map what you can to Elementor settings. Put everything else in `custom_css`. Never leave a styling difference unresolved — the output must be pixel-perfect before push.
+
 **Output**: a Python file `generate_elementor.py` that builds and writes the JSON array to `elementor-data.json`.
 
 ```python
