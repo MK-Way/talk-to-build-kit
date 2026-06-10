@@ -36,14 +36,13 @@ Elementor bypasses `post_content`. Everything lives in WordPress `postmeta`:
 
 ## Page Type Decision
 
-Same rule as standard T2B:
-
 | Page | Template |
 |---|---|
-| Normal site page (about, contact, services…) | `elementor_header_footer` — uses the theme/Elementor header & footer |
-| Homepage with fully custom layout | `elementor_canvas` — blank, no chrome |
-| Standalone landing page | `elementor_canvas` |
+| Any page in a full-site migration (home, about, contact, services…) | `elementor_header_footer` — Theme Builder provides the shared header & footer |
+| Standalone landing page with **no** shared header/footer | `elementor_canvas` — blank, no chrome |
 | When in doubt | `elementor_header_footer` |
+
+> ⚠️ **Never use `elementor_canvas` for the homepage in a full-site migration.** `elementor_canvas` bypasses Theme Builder entirely — the page will have no header or footer even when Phase 0 is complete. All pages in a full-site migration use `elementor_header_footer`.
 
 ---
 
@@ -1159,6 +1158,23 @@ scp -i <YOUR_SSH_KEY_PATH> elementor-data.json push-elementor.py <SITE_USER>@<IP
 ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "python3 /tmp/<PROJECT>/push-elementor.py"
 ```
 
+### Step 5b: Set Homepage (homepage migrations only)
+
+After pushing the homepage page, tell WordPress to serve it as the front page instead of the blog:
+
+```bash
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "
+  HOMEPAGE_ID=\$(wp --path=~/files post list --post_type=page --name=<HOMEPAGE_SLUG> --format=ids)
+  wp --path=~/files option update show_on_front page
+  wp --path=~/files option update page_on_front \$HOMEPAGE_ID
+  echo \"Front page set to ID \$HOMEPAGE_ID\"
+"
+```
+
+Replace `<HOMEPAGE_SLUG>` with the actual page slug (e.g. `homepage` or `home`). Without this step, WordPress shows the blog posts page instead of the Elementor homepage.
+
+---
+
 ### Step 6: Flush CSS + Caches
 
 After any Elementor DB insert, Elementor's CSS cache must also be flushed — not just Redis/Nginx:
@@ -1168,7 +1184,7 @@ ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd ~/files && \
   wp elementor flush_css && \
   redis-cli --user <REDIS_USER> --pass '<REDIS_PASS>' FLUSHALL && \
   wp cache flush && \
-  wp nginx-helper purge-all"
+  wp nginx-helper purge-all 2>/dev/null || true"
 ```
 
 `wp elementor flush_css` regenerates the page's compiled CSS. Without this, the page may render without any styling.
@@ -1247,6 +1263,8 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
 | 2026-06-10 | `background-position` and `object-position` mismatches on sections and images are a common source of visual bugs not caught by colour/font checks | Step 2.1 now extracts bg_positions, bg_sizes, object_positions, object_fits from source; Step 4.1 verifies them before every push |
 | 2026-06-10 | Section padding left as `None` in `make_container` caused content to bleed to screen edges — no padding = content starts at 0px from the viewport edge | Padding is now mandatory on every outer container: extract from source CSS, never use default `None` for section-level containers |
+| 2026-06-10 | Page Type Decision table listed `elementor_canvas` for homepage — canvas bypasses Theme Builder so the page has no header/footer | Table updated: full-site migrations always use `elementor_header_footer` for all pages including homepage |
+| 2026-06-10 | WordPress front page not set after pushing homepage — site shows blog instead of Elementor homepage | Step 5b added: set `show_on_front = page` + `page_on_front = <ID>` via WP-CLI after homepage push |
 
 ---
 
