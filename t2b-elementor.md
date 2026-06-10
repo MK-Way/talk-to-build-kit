@@ -716,10 +716,12 @@ Run locally, review the JSON, then proceed to push.
 
 ### Step 5: Push to WordPress Database
 
+The push script uses **UPSERT logic** — if a page with the same slug already exists it updates it in place; if not it creates a new one. This prevents duplicate pages when migrating a site that already has WP pages.
+
 SCP the JSON file and push script to server, then execute:
 
 ```python
-import subprocess, sys, json
+import subprocess, sys, json, re
 
 json_file  = '/tmp/<PROJECT>/elementor-data.json'
 db_user    = '<DB_USER>'
@@ -728,38 +730,72 @@ db_name    = '<DB_NAME>'
 prefix     = '<TABLE_PREFIX>'
 page_title = '<PAGE_TITLE>'
 page_slug  = '<PAGE_SLUG>'
-template   = 'elementor_header_footer'  # or 'elementor_canvas'
+template   = 'elementor_header_footer'
 el_version = '3.25.0'  # match server's Elementor version
 
 with open(json_file, 'r', encoding='utf-8') as f:
     raw_json = f.read()
 
-# Escape for MySQL
 escaped_json = raw_json.replace('\\', '\\\\').replace("'", "\\'")
 
-sql = []
-
-# 1. Insert page
-sql.append(
-    "INSERT INTO {0}posts (post_author, post_date, post_date_gmt, post_content, post_title, "
-    "post_excerpt, post_status, comment_status, ping_status, post_name, post_type, "
-    "post_modified, post_modified_gmt, to_ping, pinged, post_content_filtered) "
-    "VALUES (1, NOW(), NOW(), '', '{1}', '', 'publish', 'closed', 'closed', "
-    "'{2}', 'page', NOW(), NOW(), '', '', '');".format(prefix, page_title, page_slug)
+# ── 1. Check if page already exists by slug ──────────────────────────────────
+check_sql = (
+    f"SELECT ID FROM {prefix}posts "
+    f"WHERE post_name = '{page_slug}' AND post_type = 'page' "
+    f"AND post_status != 'trash' LIMIT 1;"
 )
-sql.append("SET @page_id = LAST_INSERT_ID();")
 
-# 2. Elementor postmeta
-sql.append("INSERT INTO {0}postmeta (post_id, meta_key, meta_value) VALUES (@page_id, '_elementor_data', '{1}');".format(prefix, escaped_json))
-sql.append("INSERT INTO {0}postmeta (post_id, meta_key, meta_value) VALUES (@page_id, '_elementor_edit_mode', 'builder');".format(prefix))
-sql.append("INSERT INTO {0}postmeta (post_id, meta_key, meta_value) VALUES (@page_id, '_wp_page_template', '{1}');".format(prefix, template))
-sql.append("INSERT INTO {0}postmeta (post_id, meta_key, meta_value) VALUES (@page_id, '_elementor_version', '{1}');".format(prefix, el_version))
+check = subprocess.run(
+    ['mysql', '-u', db_user, '-p' + db_pass, '-N', '-s', db_name],
+    input=check_sql, capture_output=True, text=True
+)
+existing_id = check.stdout.strip()
 
-full_sql = '\n'.join(sql)
-sql_file = '/tmp/<PROJECT>/insert-elementor.sql'
+# ── 2. Build SQL based on whether page exists ─────────────────────────────────
+elementor_meta_keys = "'_elementor_data','_elementor_edit_mode','_wp_page_template','_elementor_version'"
 
+if existing_id:
+    # UPDATE existing page — never creates duplicates
+    print(f'Page "{page_slug}" exists (ID {existing_id}) — updating in place')
+    sql = f"""
+UPDATE {prefix}posts
+   SET post_title = '{page_title}', post_modified = NOW(), post_modified_gmt = NOW(), post_content = ''
+ WHERE ID = {existing_id};
+
+DELETE FROM {prefix}postmeta
+ WHERE post_id = {existing_id} AND meta_key IN ({elementor_meta_keys});
+
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES
+  ({existing_id}, '_elementor_data',      '{escaped_json}'),
+  ({existing_id}, '_elementor_edit_mode', 'builder'),
+  ({existing_id}, '_wp_page_template',    '{template}'),
+  ({existing_id}, '_elementor_version',   '{el_version}');
+"""
+else:
+    # INSERT new page — slug does not exist yet
+    print(f'Page "{page_slug}" not found — creating new page')
+    sql = f"""
+INSERT INTO {prefix}posts
+  (post_author, post_date, post_date_gmt, post_content, post_title,
+   post_excerpt, post_status, comment_status, ping_status, post_name,
+   post_type, post_modified, post_modified_gmt, to_ping, pinged, post_content_filtered)
+VALUES
+  (1, NOW(), NOW(), '', '{page_title}', '', 'publish', 'closed', 'closed',
+   '{page_slug}', 'page', NOW(), NOW(), '', '', '');
+
+SET @page_id = LAST_INSERT_ID();
+
+INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES
+  (@page_id, '_elementor_data',      '{escaped_json}'),
+  (@page_id, '_elementor_edit_mode', 'builder'),
+  (@page_id, '_wp_page_template',    '{template}'),
+  (@page_id, '_elementor_version',   '{el_version}');
+"""
+
+# ── 3. Execute ────────────────────────────────────────────────────────────────
+sql_file = f'/tmp/<PROJECT>/upsert-{page_slug}.sql'
 with open(sql_file, 'w') as f:
-    f.write(full_sql)
+    f.write(sql)
 
 result = subprocess.run(
     ['mysql', '-u', db_user, '-p' + db_pass, db_name],
@@ -767,7 +803,8 @@ result = subprocess.run(
 )
 
 if result.returncode == 0:
-    print(f'SUCCESS: "{page_title}" created as native Elementor page')
+    action = 'updated' if existing_id else 'created'
+    print(f'SUCCESS: "{page_title}" ({page_slug}) {action}')
 else:
     print('ERROR:', result.stderr)
 
@@ -812,19 +849,13 @@ curl -s https://<SITE>/<SLUG>/ | grep -i 'elementor'
 
 ## Updating an Existing Page
 
+The push script in Step 5 already handles this automatically — it detects the page by slug and updates in place. No manual SQL needed, no duplicate pages.
+
 For subsequent updates (Anastasia sends a revised HTML):
 
 1. Re-run the analysis (Step 2) — identify what changed
 2. Regenerate the affected sections in `generate_elementor.py`
-3. Run UPDATE instead of INSERT in the push script:
-
-```sql
-UPDATE <PREFIX>postmeta
-SET meta_value = '<ESCAPED_JSON>'
-WHERE post_id = (SELECT ID FROM <PREFIX>posts WHERE post_name = '<SLUG>' AND post_type = 'page')
-  AND meta_key = '_elementor_data';
-```
-
+3. Re-run the Step 5 push script with the same `page_slug` — it will UPDATE, not INSERT
 4. Flush CSS + caches (Step 6)
 5. Verify in editor
 
