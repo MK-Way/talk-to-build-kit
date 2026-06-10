@@ -751,31 +751,60 @@ Before generating any page JSON, extract the full design system from the source 
 import re, json, glob
 
 def extract_design_tokens(source_folder):
-    """Read all HTML files and extract every colour and font size used."""
+    """Extract colours, font sizes, and image positioning from all source HTML files."""
     colors = set()
     font_sizes = set()
     font_families = []
+    bg_positions = set()
+    bg_sizes = set()
+    object_positions = set()
+    object_fits = set()
 
     html_files = glob.glob(f"{source_folder}/*.html")
     for path in html_files:
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
+
+        # Colours
         colors.update(re.findall(r'#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b', content))
         colors.update(re.findall(r'rgba?\([^)]+\)', content))
+
+        # Typography
         font_sizes.update(re.findall(r'font-size\s*:\s*([\d.]+(?:px|rem|em))', content))
         font_families += re.findall(r'font-family\s*:\s*([^;}{]+)', content)
 
+        # Background image positioning
+        bg_positions.update(v.strip() for v in
+            re.findall(r'background-position\s*:\s*([^;}{]+)', content))
+        bg_sizes.update(v.strip() for v in
+            re.findall(r'background-size\s*:\s*([^;}{]+)', content))
+
+        # Image object positioning
+        object_positions.update(v.strip() for v in
+            re.findall(r'object-position\s*:\s*([^;}{]+)', content))
+        object_fits.update(v.strip() for v in
+            re.findall(r'object-fit\s*:\s*([^;}{]+)', content))
+
     tokens = {
-        "colors": sorted(colors),
-        "font_sizes": sorted(font_sizes),
-        "font_families": list(dict.fromkeys(f.strip().strip("'\"") for f in font_families))[:6]
+        "colors":           sorted(colors),
+        "font_sizes":       sorted(font_sizes),
+        "font_families":    list(dict.fromkeys(f.strip().strip("'\"") for f in font_families))[:6],
+        "bg_positions":     sorted(bg_positions),
+        "bg_sizes":         sorted(bg_sizes),
+        "object_positions": sorted(object_positions),
+        "object_fits":      sorted(object_fits),
     }
 
     with open('design-tokens.json', 'w') as f:
         json.dump(tokens, f, indent=2)
 
-    print(f"Design tokens extracted from {len(html_files)} files")
-    print(f"  {len(tokens['colors'])} colours, {len(tokens['font_sizes'])} font sizes")
+    print(f"Design tokens extracted from {len(html_files)} files:")
+    print(f"  {len(tokens['colors'])} colours")
+    print(f"  {len(tokens['font_sizes'])} font sizes")
+    print(f"  bg-position values: {tokens['bg_positions']}")
+    print(f"  bg-size values:     {tokens['bg_sizes']}")
+    print(f"  object-position:    {tokens['object_positions']}")
+    print(f"  object-fit:         {tokens['object_fits']}")
     return tokens
 
 tokens = extract_design_tokens("C:/path/to/source/html/folder")
@@ -905,13 +934,19 @@ def verify_page_styles(json_file, tokens_file='design-tokens.json'):
         tokens = json.load(f)
 
     known_colors = set(c.lower() for c in tokens['colors'])
-    known_sizes  = set(tokens['font_sizes'])
+    known_sizes       = set(tokens['font_sizes'])
+    known_bg_pos      = set(v.lower() for v in tokens.get('bg_positions', []))
+    known_bg_sizes    = set(v.lower() for v in tokens.get('bg_sizes', []))
+    known_obj_pos     = set(v.lower() for v in tokens.get('object_positions', []))
+    known_obj_fits    = set(v.lower() for v in tokens.get('object_fits', []))
     issues = []
 
-    COLOR_KEYS = ['color', 'text_color', 'title_color', 'background_color',
-                  'button_text_color', 'border_color', 'icon_color',
-                  'heading_color', 'tab_color']
-    SIZE_KEYS  = ['typography_font_size', 'font_size']
+    COLOR_KEYS  = ['color', 'text_color', 'title_color', 'background_color',
+                   'button_text_color', 'border_color', 'icon_color',
+                   'heading_color', 'tab_color']
+    SIZE_KEYS   = ['typography_font_size', 'font_size']
+    BG_POS_KEYS = ['background_position']
+    BG_SZ_KEYS  = ['background_size']
 
     def walk(el, path=''):
         label = el.get('widgetType') or el.get('elType', '?')
@@ -929,6 +964,25 @@ def verify_page_styles(json_file, tokens_file='design-tokens.json'):
                 size_str = f"{val.get('size')}{val.get('unit','px')}"
                 if size_str not in known_sizes:
                     issues.append(f"  SIZE    [{label}] {key}: {size_str} — not in design tokens")
+
+        # Background image positioning
+        for key in BG_POS_KEYS:
+            val = settings.get(key, '')
+            if val and known_bg_pos and val.lower() not in known_bg_pos:
+                issues.append(f"  BG-POS  [{label}] {key}: '{val}' — not in design tokens (source uses: {sorted(known_bg_pos)})")
+
+        for key in BG_SZ_KEYS:
+            val = settings.get(key, '')
+            if val and known_bg_sizes and val.lower() not in known_bg_sizes:
+                issues.append(f"  BG-SIZE [{label}] {key}: '{val}' — not in design tokens (source uses: {sorted(known_bg_sizes)})")
+
+        # Image widget object-position (stored in custom CSS or _css_custom_mobile)
+        custom_css = settings.get('custom_css', '') or settings.get('_element_custom_code', '')
+        if custom_css:
+            found_obj_pos = re.findall(r'object-position\s*:\s*([^;}{]+)', custom_css)
+            for v in found_obj_pos:
+                if known_obj_pos and v.strip().lower() not in known_obj_pos:
+                    issues.append(f"  OBJ-POS [{label}] object-position: '{v.strip()}' — not in design tokens (source uses: {sorted(known_obj_pos)})")
 
         for child in el.get('elements', []):
             walk(child, path + '/' + label)
@@ -1140,6 +1194,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
+| 2026-06-10 | `background-position` and `object-position` mismatches on sections and images are a common source of visual bugs not caught by colour/font checks | Step 2.1 now extracts bg_positions, bg_sizes, object_positions, object_fits from source; Step 4.1 verifies them before every push |
 
 ---
 
