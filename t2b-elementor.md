@@ -345,151 +345,123 @@ If the site has a footer menu, create a second one: `"Footer Navigation"`.
 
 ### Step 0c: Generate Header & Footer JSON
 
-Same Python approach as page content — build the JSON locally, write to files.
+> ⚠️ **Theme Builder uses `section/column` — NOT containers.**
+> Elementor 3.6+ containers (flexbox) do not render correctly in the Theme Builder context (header/footer templates). Always use the classic `section → column → widget` structure for Phase 0. Containers work fine for regular page content (Steps 2+).
 
-**Header example** — logo left, nav centre, CTA right:
+The reliable approach for Theme Builder: one `section`, one full-width `column`, one `html` widget with the complete header/footer HTML+CSS extracted from the source file.
 
 ```python
 import json, secrets
 
 def uid(): return secrets.token_hex(4)
 
-header_data = [
-    {
-        "id": uid(), "elType": "container", "isInner": False,
-        "settings": {
-            "flex_direction": "row",
-            "flex_align_items": "center",
-            "content_width": "boxed",
-            "background_background": "classic",
-            "background_color": "#ffffff",
-            "padding": {"unit": "px", "top": "20", "right": "40", "bottom": "20", "left": "40", "isLinked": False},
-            "width": {"unit": "px", "size": 1200}
-        },
-        "elements": [
-            # Logo (left)
-            {
-                "id": uid(), "elType": "widget", "widgetType": "theme-site-logo",
-                "isInner": False,
-                "settings": {"width": {"unit": "px", "size": 140}, "align": "left"},
-                "elements": []
+def make_theme_builder_template(html_content):
+    """Wrap HTML content in section/column — required for Theme Builder."""
+    return [
+        {
+            "id": uid(), "elType": "section", "isInner": False,
+            "settings": {
+                "padding": {"unit": "px", "top": "0", "right": "0", "bottom": "0", "left": "0", "isLinked": True}
             },
-            # Nav menu (centre — flex-grow)
-            {
-                "id": uid(), "elType": "widget", "widgetType": "nav-menu",
-                "isInner": False,
-                "settings": {
-                    "menu": "main-navigation",  # WP menu slug
-                    "layout": "horizontal",
-                    "align_items": "center",
-                    "typography_font_size": {"unit": "px", "size": 15},
-                    "color": "#1a1a2e",
-                    "color_hover": "#0073aa"
-                },
-                "elements": []
-            },
-            # CTA button (right)
-            {
-                "id": uid(), "elType": "widget", "widgetType": "button",
-                "isInner": False,
-                "settings": {
-                    "text": "Get Started",
-                    "link": {"url": "/contact/"},
-                    "align": "right",
-                    "button_text_color": "#ffffff",
-                    "background_color": "#0073aa",
-                    "border_radius": {"unit": "px", "top": 6, "right": 6, "bottom": 6, "left": 6},
-                    "padding": {"unit": "px", "top": "10", "right": "24", "bottom": "10", "left": "24", "isLinked": False}
-                },
-                "elements": []
-            }
-        ]
-    }
-]
+            "elements": [
+                {
+                    "id": uid(), "elType": "column", "isInner": False,
+                    "settings": {"_column_size": 100, "_inline_size": None},
+                    "elements": [
+                        {
+                            "id": uid(), "elType": "widget", "widgetType": "html",
+                            "isInner": False,
+                            "settings": {"html": html_content},
+                            "elements": []
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+
+# Extract header HTML+CSS from source file
+# Include <style> tags and the <header> element — strip <html>/<head>/<body>
+header_html = """
+<style>
+/* paste header-specific CSS here */
+</style>
+<header class="site-header">
+  <!-- paste header HTML here -->
+</header>
+"""
+
+footer_html = """
+<style>
+/* paste footer-specific CSS here */
+</style>
+<footer class="site-footer">
+  <!-- paste footer HTML here -->
+</footer>
+"""
 
 with open('header-data.json', 'w', encoding='utf-8') as f:
-    json.dump(header_data, f, ensure_ascii=False)
+    json.dump(make_theme_builder_template(header_html), f, ensure_ascii=False)
 print('header-data.json written')
-```
-
-**Footer example** — two columns: links left, copyright + socials right:
-
-```python
-footer_data = [
-    {
-        "id": uid(), "elType": "container", "isInner": False,
-        "settings": {
-            "flex_direction": "row",
-            "flex_align_items": "flex-start",
-            "content_width": "boxed",
-            "background_background": "classic",
-            "background_color": "#0b1220",
-            "padding": {"unit": "px", "top": "60", "right": "40", "bottom": "40", "left": "40", "isLinked": False}
-        },
-        "elements": [
-            # Left: logo + footer nav
-            {
-                "id": uid(), "elType": "container", "isInner": True,
-                "settings": {"flex_direction": "column", "width": {"unit": "%", "size": 50}},
-                "elements": [
-                    {
-                        "id": uid(), "elType": "widget", "widgetType": "theme-site-logo",
-                        "isInner": False,
-                        "settings": {"width": {"unit": "px", "size": 120}, "align": "left"},
-                        "elements": []
-                    },
-                    {
-                        "id": uid(), "elType": "widget", "widgetType": "nav-menu",
-                        "isInner": False,
-                        "settings": {
-                            "menu": "footer-navigation",
-                            "layout": "vertical",
-                            "color": "#aaaaaa",
-                            "color_hover": "#ffffff",
-                            "typography_font_size": {"unit": "px", "size": 14}
-                        },
-                        "elements": []
-                    }
-                ]
-            },
-            # Right: socials + copyright
-            {
-                "id": uid(), "elType": "container", "isInner": True,
-                "settings": {"flex_direction": "column", "flex_align_items": "flex-end", "width": {"unit": "%", "size": 50}},
-                "elements": [
-                    {
-                        "id": uid(), "elType": "widget", "widgetType": "social-icons",
-                        "isInner": False,
-                        "settings": {
-                            "social_icon_list": [
-                                {"_id": uid(), "social_icon": {"value": "fab fa-instagram", "library": "fa-brands"}, "link": {"url": "https://instagram.com/yourprofile"}},
-                                {"_id": uid(), "social_icon": {"value": "fab fa-linkedin", "library": "fa-brands"}, "link": {"url": "https://linkedin.com/company/yourco"}}
-                            ],
-                            "icon_color": "#aaaaaa",
-                            "icon_hover_color": "#ffffff",
-                            "icon_size": {"unit": "px", "size": 20}
-                        },
-                        "elements": []
-                    },
-                    {
-                        "id": uid(), "elType": "widget", "widgetType": "text-editor",
-                        "isInner": False,
-                        "settings": {
-                            "editor": "<p style=\"color:#777777;font-size:13px;\">© 2026 Company Name. All rights reserved.</p>",
-                            "align": "right"
-                        },
-                        "elements": []
-                    }
-                ]
-            }
-        ]
-    }
-]
 
 with open('footer-data.json', 'w', encoding='utf-8') as f:
-    json.dump(footer_data, f, ensure_ascii=False)
+    json.dump(make_theme_builder_template(footer_html), f, ensure_ascii=False)
 print('footer-data.json written')
 ```
+
+**What to put in `header_html` / `footer_html`:**
+1. Extract `<style>` blocks that apply to the header/footer from the source HTML
+2. Extract the `<header>` element (or the nav wrapper) — everything between `<body>` and the first `<main>`
+3. Extract the `<footer>` element — everything after `</main>`
+4. Do NOT include `<html>`, `<head>`, `<body>` tags
+5. Localise all image `src` attributes to `/wp-content/uploads/<project>/`
+
+**Multi-column header alternative** — if the design needs columns within the header, use multiple `column` elements inside the same `section`. Do NOT nest sections or use containers:
+
+```python
+def make_theme_builder_columns(columns):
+    """columns: list of (size_pct, html_content) tuples. Sizes must sum to 100."""
+    col_elements = [
+        {
+            "id": uid(), "elType": "column", "isInner": False,
+            "settings": {"_column_size": size, "_inline_size": size},
+            "elements": [
+                {"id": uid(), "elType": "widget", "widgetType": "html",
+                 "isInner": False, "settings": {"html": html}, "elements": []}
+            ]
+        }
+        for size, html in columns
+    ]
+    return [
+        {"id": uid(), "elType": "section", "isInner": False,
+         "settings": {"padding": {"unit": "px", "top": "0", "right": "0", "bottom": "0", "left": "0", "isLinked": True}},
+         "elements": col_elements}
+    ]
+
+# Example: logo (25%) | nav (50%) | CTA (25%)
+# header_data = make_theme_builder_columns([
+#     (25, '<img src="/wp-content/uploads/rcas/logo.png" alt="Logo">'),
+#     (50, '<nav>...</nav>'),
+#     (25, '<a href="/contact/" class="btn">Get Started</a>'),
+# ])
+```
+
+**Footer example** — same pattern, two columns:
+
+```python
+footer_data = make_theme_builder_columns([
+    (50, """
+<style>/* footer left CSS */</style>
+<div class="footer-left">
+  <img src="/wp-content/uploads/rcas/logo-white.png" alt="Logo">
+  <!-- footer nav links -->
+</div>"""),
+    (50, """
+<style>/* footer right CSS */</style>
+<div class="footer-right">
+  <!-- social icons + copyright -->
+</div>"""),
+])
 
 ---
 
@@ -1023,6 +995,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-09 | `wp elementor flush_css` is mandatory after DB insert — Redis/Nginx flush alone is not enough | Added as Step 6, before cache flush |
 | 2026-06-09 | Elementor 3.6+ uses Containers (flexbox) — older Section/Column format still works but containers are the standard | Directive uses containers; fallback to section/column if server runs Elementor < 3.6 |
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
+| 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 
 ---
 
