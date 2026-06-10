@@ -623,10 +623,29 @@ Do **not** use `elementor_canvas` — that bypasses Theme Builder entirely and p
 
 ```bash
 ssh -i <YOUR_SSH_KEY_PATH> -o StrictHostKeyChecking=no <SITE_USER>@<IP>
-grep -E 'DB_NAME|DB_USER|DB_PASSWORD|table_prefix|WP_REDIS' ~/files/wp-config.php
-# Also check Elementor version:
-wp --path=~/files plugin get elementor --field=version
+grep -E 'DB_NAME|DB_USER|DB_PASSWORD|table_prefix|WP_REDIS' <SITE_PATH>/wp-config.php
+# Check Elementor version:
+wp --path=<SITE_PATH> plugin get elementor --field=version
 ```
+
+**After reading credentials, immediately run these two checks and fixes:**
+
+```bash
+# 1. Enable Elementor containers experiment (required for elType:"container" to render)
+#    Elementor 4.x has this inactive by default — containers render empty without it
+CONTAINER_EXP=$(wp --path=<SITE_PATH> option get elementor_experiment-container 2>/dev/null)
+echo "Container experiment: $CONTAINER_EXP"
+if [ "$CONTAINER_EXP" != "active" ]; then
+  wp --path=<SITE_PATH> option update elementor_experiment-container active
+  echo "Container experiment activated"
+fi
+
+# 2. Confirm Elementor Pro is active (required for Form, Nav Menu, Theme Builder widgets)
+wp --path=<SITE_PATH> plugin get elementor-pro --field=status
+# Must return: active
+```
+
+> ⚠️ **If `elementor_experiment-container` is not `active`, every page built with containers will render completely empty.** This is the most common cause of "page shows nothing" after a push. Always enable it before generating any JSON.
 
 ### Step 1b: Inventory Existing Pages (migration only)
 
@@ -1085,104 +1104,82 @@ verify_page_styles('generated/pages/home-data.json')
 
 ### Step 5: Push to WordPress Database
 
-The push script uses **UPSERT logic** — if a page with the same slug already exists it updates it in place; if not it creates a new one. This prevents duplicate pages when migrating a site that already has WP pages.
+> ⚠️ **Do NOT embed JSON in SQL strings.** Escaping JSON inside SQL (`replace('\\','\\\\')`) causes multi-layer corruption. Do NOT use `update_post_meta()` — WordPress calls `wp_unslash()` internally and strips `\"` from JSON, breaking the data. Always use `$wpdb->update()` directly + `wp_cache_delete()` to invalidate the Redis object cache.
 
-SCP the JSON file and push script to server, then execute:
+The push uses **UPSERT logic** — updates in place if a page with the same slug exists, inserts new if not.
+
+**Step 5a — UPSERT the post** (create or update, no JSON yet):
 
 ```python
-import subprocess, sys, json, re
+import subprocess, sys
 
-json_file  = '/tmp/<PROJECT>/elementor-data.json'
-db_user    = '<DB_USER>'
-db_pass    = '<DB_PASS>'
-db_name    = '<DB_NAME>'
-prefix     = '<TABLE_PREFIX>'
+site_path  = '<SITE_PATH>'
 page_title = '<PAGE_TITLE>'
 page_slug  = '<PAGE_SLUG>'
 template   = 'elementor_header_footer'
-el_version = '3.25.0'  # match server's Elementor version
+el_version = '<ELEMENTOR_VERSION>'  # from Step 1: wp plugin get elementor --field=version
 
-with open(json_file, 'r', encoding='utf-8') as f:
-    raw_json = f.read()
-
-escaped_json = raw_json.replace('\\', '\\\\').replace("'", "\\'")
-
-# ── 1. Check if page already exists by slug ──────────────────────────────────
-check_sql = (
-    f"SELECT ID FROM {prefix}posts "
-    f"WHERE post_name = '{page_slug}' AND post_type = 'page' "
-    f"AND post_status != 'trash' LIMIT 1;"
-)
-
+# Check if page exists by slug
 check = subprocess.run(
-    ['mysql', '-u', db_user, '-p' + db_pass, '-N', '-s', db_name],
-    input=check_sql, capture_output=True, text=True
+    ['ssh', '-i', '<SSH_KEY>', '<SITE_USER>@<IP>',
+     f'wp --path={site_path} post list --post_type=page --name={page_slug} --format=ids'],
+    capture_output=True, text=True
 )
 existing_id = check.stdout.strip()
 
-# ── 2. Build SQL based on whether page exists ─────────────────────────────────
-elementor_meta_keys = "'_elementor_data','_elementor_edit_mode','_wp_page_template','_elementor_version'"
-
 if existing_id:
-    # UPDATE existing page — never creates duplicates
-    print(f'Page "{page_slug}" exists (ID {existing_id}) — updating in place')
-    sql = f"""
-UPDATE {prefix}posts
-   SET post_title = '{page_title}', post_modified = NOW(), post_modified_gmt = NOW(), post_content = ''
- WHERE ID = {existing_id};
-
-DELETE FROM {prefix}postmeta
- WHERE post_id = {existing_id} AND meta_key IN ({elementor_meta_keys});
-
-INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES
-  ({existing_id}, '_elementor_data',      '{escaped_json}'),
-  ({existing_id}, '_elementor_edit_mode', 'builder'),
-  ({existing_id}, '_wp_page_template',    '{template}'),
-  ({existing_id}, '_elementor_version',   '{el_version}');
-"""
+    print(f'Page "{page_slug}" exists (ID {existing_id}) — updating')
+    subprocess.run([
+        'ssh', '-i', '<SSH_KEY>', '<SITE_USER>@<IP>',
+        f'wp --path={site_path} post update {existing_id} --post_title="{page_title}" --post_content="" --post_status=publish'
+    ])
+    page_id = existing_id
 else:
-    # INSERT new page — slug does not exist yet
-    print(f'Page "{page_slug}" not found — creating new page')
-    sql = f"""
-INSERT INTO {prefix}posts
-  (post_author, post_date, post_date_gmt, post_content, post_title,
-   post_excerpt, post_status, comment_status, ping_status, post_name,
-   post_type, post_modified, post_modified_gmt, to_ping, pinged, post_content_filtered)
-VALUES
-  (1, NOW(), NOW(), '', '{page_title}', '', 'publish', 'closed', 'closed',
-   '{page_slug}', 'page', NOW(), NOW(), '', '', '');
+    print(f'Page "{page_slug}" not found — creating')
+    result = subprocess.run(
+        ['ssh', '-i', '<SSH_KEY>', '<SITE_USER>@<IP>',
+         f'wp --path={site_path} post create --post_type=page --post_title="{page_title}" --post_name={page_slug} --post_status=publish --porcelain'],
+        capture_output=True, text=True
+    )
+    page_id = result.stdout.strip()
+    print(f'Created page ID: {page_id}')
 
-SET @page_id = LAST_INSERT_ID();
-
-INSERT INTO {prefix}postmeta (post_id, meta_key, meta_value) VALUES
-  (@page_id, '_elementor_data',      '{escaped_json}'),
-  (@page_id, '_elementor_edit_mode', 'builder'),
-  (@page_id, '_wp_page_template',    '{template}'),
-  (@page_id, '_elementor_version',   '{el_version}');
-"""
-
-# ── 3. Execute ────────────────────────────────────────────────────────────────
-sql_file = f'/tmp/<PROJECT>/upsert-{page_slug}.sql'
-with open(sql_file, 'w') as f:
-    f.write(sql)
-
-result = subprocess.run(
-    ['mysql', '-u', db_user, '-p' + db_pass, db_name],
-    stdin=open(sql_file), capture_output=True, text=True
-)
-
-if result.returncode == 0:
-    action = 'updated' if existing_id else 'created'
-    print(f'SUCCESS: "{page_title}" ({page_slug}) {action}')
-else:
-    print('ERROR:', result.stderr)
-
-sys.exit(result.returncode)
+print(f'Page ID: {page_id}')
 ```
 
+**Step 5b — SCP JSON to server, then push postmeta via `$wpdb->update()`:**
+
 ```bash
-scp -i <YOUR_SSH_KEY_PATH> elementor-data.json push-elementor.py <SITE_USER>@<IP>:/tmp/<PROJECT>/
-ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "python3 /tmp/<PROJECT>/push-elementor.py"
+# SCP the JSON file
+scp -i <SSH_KEY> elementor-data.json <SITE_USER>@<IP>:/tmp/<PROJECT>/elementor-data.json
+
+# Push postmeta — using $wpdb->update() directly (safe, no escaping issues)
+# wp_cache_delete() is mandatory — Redis caches old meta values and ignores DB writes otherwise
+ssh -i <SSH_KEY> <SITE_USER>@<IP> "wp --path=<SITE_PATH> eval '
+\$json     = file_get_contents(\"/tmp/<PROJECT>/elementor-data.json\");
+\$page_id  = <PAGE_ID>;
+\$template = \"elementor_header_footer\";
+\$version  = \"<ELEMENTOR_VERSION>\";
+
+global \$wpdb;
+
+// Delete existing elementor meta to avoid stale rows
+\$wpdb->delete(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_data\"]);
+\$wpdb->delete(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_edit_mode\"]);
+\$wpdb->delete(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_wp_page_template\"]);
+\$wpdb->delete(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_version\"]);
+
+// Insert fresh — $wpdb handles escaping internally, no manual string manipulation needed
+\$wpdb->insert(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_data\",      \"meta_value\" => \$json]);
+\$wpdb->insert(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_edit_mode\", \"meta_value\" => \"builder\"]);
+\$wpdb->insert(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_wp_page_template\",    \"meta_value\" => \$template]);
+\$wpdb->insert(\$wpdb->postmeta, [\"post_id\" => \$page_id, \"meta_key\" => \"_elementor_version\",   \"meta_value\" => \$version]);
+
+// Invalidate Redis/object cache — without this, get_post_meta() returns stale data
+wp_cache_delete(\$page_id, \"post_meta\");
+
+echo \"SUCCESS: page {\$page_id} meta written\\n\";
+'"
 ```
 
 ### Step 5b: Set Homepage (homepage migrations only)
@@ -1286,6 +1283,9 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | Images not loading | External URLs in JSON or wrong upload path | Re-run localization, check `/wp-content/uploads/<PROJECT>/` |
 | Elementor editor crashes on page open | Malformed JSON in `_elementor_data` | Validate JSON with `python3 -c "import json; json.load(open('elementor-data.json'))"` |
 | Page shows WP default (not Elementor) | `_elementor_edit_mode` missing or wrong template | Check all 3 postmeta: `_elementor_data`, `_elementor_edit_mode`, `_wp_page_template` |
+| Page renders completely empty after push | `elementor_experiment-container` is inactive — containers don't render | Run: `wp option update elementor_experiment-container active` then flush CSS |
+| `get_post_meta()` returns old data after DB write | Redis object cache holds stale value — `$wpdb->update()` writes to DB but cache is not invalidated | Add `wp_cache_delete($page_id, 'post_meta')` immediately after every DB write |
+| JSON corrupt in DB (`\"` stripped, broken structure) | `update_post_meta()` calls `wp_unslash()` internally | Never use `update_post_meta()` for `_elementor_data` — use `$wpdb->insert()` / `$wpdb->delete()` directly |
 | Theme Builder header/footer not showing | Display condition not applied or cache stale | Flush with `wp elementor flush_css`; if still missing, set condition manually in WP Admin → Templates → Theme Builder |
 | Pages have no header/footer at all | Wrong page template — `elementor_canvas` used instead of `elementor_header_footer` | Update `_wp_page_template` postmeta to `elementor_header_footer` for all affected pages |
 
@@ -1300,6 +1300,9 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-09 | Elementor 3.6+ uses Containers (flexbox) — older Section/Column format still works but containers are the standard | Directive uses containers; fallback to section/column if server runs Elementor < 3.6 |
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
 | 2026-06-10 | After Phase 0, Nginx full-page cache serves stale page — new header/footer doesn't appear even though DB is correct | `wp nginx-helper purge-all` added to Step 0e flush sequence (mandatory, not just Step 6) |
+| 2026-06-11 | `elementor_experiment-container` is inactive by default in Elementor 4.1.x — every container renders empty, page shows nothing | Step 1 now checks and activates this experiment before any JSON is generated |
+| 2026-06-11 | `update_post_meta()` calls `wp_unslash()` internally, stripping `\"` from JSON and corrupting `_elementor_data` | Push script rewritten: use `$wpdb->insert()` / `$wpdb->delete()` directly — never `update_post_meta()` for Elementor data |
+| 2026-06-11 | Redis object cache not invalidated after direct DB write — `get_post_meta()` returns stale data even after `$wpdb->insert()` | `wp_cache_delete($page_id, 'post_meta')` added after every DB write in push script |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
