@@ -76,6 +76,17 @@ When analysing HTML, map each element to the most appropriate native Elementor w
 | Star rating | Star Rating | `star-rating` |
 | Complex/animated/SVG sections | HTML (fallback) | `html` |
 
+> ❌ **NEVER use the `html` widget for regular page content.**
+> The entire purpose of this directive is to produce pages the client can edit in Elementor.
+> An `html` widget is a black box — the client cannot change text, colours, or images without knowing HTML.
+>
+> **`html` widget is allowed ONLY in two situations:**
+> 1. **Phase 0** — header and footer in Elementor Theme Builder (unavoidable: containers don't render in Theme Builder context)
+> 2. **Truly unmappable sections** — complex CSS animations, SVG diagrams, interactive JS sliders with no Elementor equivalent
+>
+> **If you are about to use an `html` widget for a heading, a paragraph, an image, or a button — stop. Use the native widget instead.**
+> When in doubt, use a simpler native widget that loses some visual fidelity over an HTML widget that loses all editability.
+
 ---
 
 ## Elementor JSON Structure
@@ -826,6 +837,10 @@ In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...
 
 ### Step 4: Generate Elementor JSON
 
+> ⚠️ **Every section must be built with native widgets — no exceptions for regular content.**
+> Do NOT use the `html` widget for page content. If a section has headings, text, images, or buttons, map them to `heading`, `text-editor`, `image`, `button` (see Widget Mapping Reference above).
+> Only use `html` fallback if a section has JS interactions or CSS animations that have **no native Elementor equivalent** — and document every such case with a comment explaining why.
+
 **Convert the HTML section by section.** For each section:
 
 1. Create a top-level container with section background settings (colour, image, padding)
@@ -1194,6 +1209,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-10 | `elementor_canvas` bypasses Theme Builder — pages have no header/footer even when Theme Builder is configured | All pages in full-site migrations use `elementor_header_footer`; Phase 0 must run first to build the shared header/footer |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
+| 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
 | 2026-06-10 | `background-position` and `object-position` mismatches on sections and images are a common source of visual bugs not caught by colour/font checks | Step 2.1 now extracts bg_positions, bg_sizes, object_positions, object_fits from source; Step 4.1 verifies them before every push |
 
 ---
