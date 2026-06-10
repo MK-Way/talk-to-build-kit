@@ -840,6 +840,20 @@ In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...
 
 ### Step 4: Generate Elementor JSON
 
+**Before writing a single line of JSON, output this checklist verbatim and confirm each item:**
+
+```
+Page build checklist — [PAGE NAME]
+[ ] Using native Elementor widgets for ALL content (heading, text-editor, image, button, icon-box…)
+[ ] html widget NOT used for any heading, paragraph, image, or button
+[ ] html widget only if section has JS animation/SVG with no Elementor equivalent — documented with a comment
+[ ] Padding extracted from source CSS for every outer container — never padding=None on a section
+[ ] All colours verified against design-tokens.json
+[ ] Style verification (Step 4.1) will run before push
+```
+
+Do not proceed until this checklist is printed and every item is confirmed. If any item cannot be confirmed, stop and resolve it first.
+
 > ⚠️ **Every section must be built with native widgets — no exceptions for regular content.**
 > Do NOT use the `html` widget for page content. If a section has headings, text, images, or buttons, map them to `heading`, `text-editor`, `image`, `button` (see Widget Mapping Reference above).
 > Only use `html` fallback if a section has JS interactions or CSS animations that have **no native Elementor equivalent** — and document every such case with a comment explaining why.
