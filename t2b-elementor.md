@@ -941,12 +941,21 @@ For containers/sections, `custom_css` scopes to the section wrapper:
 **Output**: a Python file `generate_elementor.py` that builds and writes the JSON array to `elementor-data.json`.
 
 ```python
-import json, secrets, re
+import json, hashlib, re
 
-def uid(): return secrets.token_hex(4)
+def uid(seed):
+    """Deterministic 8-char hex ID from a seed string.
+    NEVER use secrets.token_hex() — random IDs change on every run,
+    causing Nginx-cached HTML to mismatch regenerated CSS and breaking the layout."""
+    return hashlib.md5(seed.encode()).hexdigest()[:8]
 
-def make_heading(text, tag='h2', align='center', color='#1a1a2e', size=36):
-    return {"id": uid(), "elType": "widget", "widgetType": "heading", "isInner": False,
+# Usage: always pass a meaningful seed — page + section + role
+# uid("homepage-hero-container")   → always the same ID
+# uid("homepage-hero-h1")          → always the same ID
+# uid("homepage-pillars-col-1")    → always the same ID
+
+def make_heading(seed, text, tag='h2', align='center', color='#1a1a2e', size=36):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "heading", "isInner": False,
             "settings": {"title": text, "header_size": tag, "align": align,
                          "title_color": color,
                          "typography_typography": "custom",
@@ -955,37 +964,37 @@ def make_heading(text, tag='h2', align='center', color='#1a1a2e', size=36):
                          "typography_font_size_mobile": {"unit": "px", "size": int(size * 0.6)},
                          "typography_font_weight": "700"}, "elements": []}
 
-def make_text(html, align='left'):
-    return {"id": uid(), "elType": "widget", "widgetType": "text-editor", "isInner": False,
+def make_text(seed, html, align='left'):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "text-editor", "isInner": False,
             "settings": {"editor": html, "align": align}, "elements": []}
 
-def make_button(text, url, bg='#0073aa', color='#ffffff', align='center'):
-    return {"id": uid(), "elType": "widget", "widgetType": "button", "isInner": False,
+def make_button(seed, text, url, bg='#0073aa', color='#ffffff', align='center'):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "button", "isInner": False,
             "settings": {"text": text, "link": {"url": url}, "align": align,
                          "button_text_color": color, "background_color": bg,
                          "padding": {"unit": "px", "top": "14", "right": "32",
                                      "bottom": "14", "left": "32", "isLinked": False}}, "elements": []}
 
-def make_image(url, align='center', size='full'):
-    return {"id": uid(), "elType": "widget", "widgetType": "image", "isInner": False,
+def make_image(seed, url, align='center', size='full'):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "image", "isInner": False,
             "settings": {"image": {"url": url}, "image_size": size, "align": align}, "elements": []}
 
-def make_spacer(px=40):
-    return {"id": uid(), "elType": "widget", "widgetType": "spacer", "isInner": False,
+def make_spacer(seed, px=40):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "spacer", "isInner": False,
             "settings": {"space": {"unit": "px", "size": px}}, "elements": []}
 
-def make_html(html):
-    return {"id": uid(), "elType": "widget", "widgetType": "html", "isInner": False,
+def make_html(seed, html):
+    return {"id": uid(seed), "elType": "widget", "widgetType": "html", "isInner": False,
             "settings": {"html": html}, "elements": []}
 
-def make_container(elements, bg_color=None, bg_image=None, padding=None,
+def make_container(seed, elements, bg_color=None, bg_image=None, padding=None,
                    direction='column', is_inner=False, width_pct=None):
     settings = {"flex_direction": direction, "content_width": "boxed" if not is_inner else "full"}
     if bg_color: settings["background_background"] = "classic"; settings["background_color"] = bg_color
     if bg_image: settings["background_background"] = "classic"; settings["background_image"] = {"url": bg_image}
     if padding:  settings["padding"] = padding
     if width_pct: settings["width"] = {"unit": "%", "size": width_pct}
-    return {"id": uid(), "elType": "container", "isInner": is_inner,
+    return {"id": uid(seed), "elType": "container", "isInner": is_inner,
             "settings": settings, "elements": elements}
 
 # ─── BUILD PAGE ───────────────────────────────────────────────────────────────
@@ -993,15 +1002,17 @@ def make_container(elements, bg_color=None, bg_image=None, padding=None,
 
 page_data = [
     # SECTION: Hero
-    make_container(
+    # Seeds follow the pattern: "<page>-<section>-<role>"
+    # Keep seeds stable — changing a seed changes the element ID and can break Nginx-cached pages
+    make_container("home-hero", 
         bg_color="#0b1220",
         padding={"unit": "px", "top": "120", "right": "40", "bottom": "120", "left": "40", "isLinked": False},
         elements=[
-            make_heading("Your Hero Title", tag="h1", color="#ffffff", size=56),
-            make_spacer(24),
-            make_text('<p style="color:#cccccc;font-size:20px;">Your hero subtitle or description.</p>', align='center'),
-            make_spacer(32),
-            make_button("Get Started", "https://example.com/contact"),
+            make_heading("home-hero-h1", "Your Hero Title", tag="h1", color="#ffffff", size=56),
+            make_spacer("home-hero-spacer1", 24),
+            make_text("home-hero-text", '<p style="color:#cccccc;font-size:20px;">Your hero subtitle or description.</p>', align='center'),
+            make_spacer("home-hero-spacer2", 32),
+            make_button("home-hero-btn", "Get Started", "https://example.com/contact"),
         ]
     ),
     # Add more sections here...
@@ -1313,6 +1324,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-11 | `update_post_meta()` calls `wp_unslash()` internally, stripping `\"` from JSON and corrupting `_elementor_data` | Push script rewritten: use `$wpdb->insert()` / `$wpdb->delete()` directly — never `update_post_meta()` for Elementor data |
 | 2026-06-11 | Redis object cache not invalidated after direct DB write — `get_post_meta()` returns stale data even after `$wpdb->insert()` | `wp_cache_delete($page_id, 'post_meta')` added after every DB write in push script |
 | 2026-06-11 | `wp nginx-helper purge-all 2>/dev/null \|\| true` masked Nginx purge failures — old HTML + new CSS IDs = page broken | Removed silent suppression from Step 6; failure is now visible. Fallback: WP Admin → Nginx Helper → Purge All, or verify via Magic Login (logged-in users bypass cache) |
+| 2026-06-11 | `uid()` using `secrets.token_hex(4)` generates new random IDs on every run — Nginx-cached HTML has old IDs, regenerated CSS has new IDs, page breaks on every update | `uid(seed)` now uses `hashlib.md5(seed)[:8]` — IDs are deterministic per element, stable across re-runs. Seeds follow pattern `"<page>-<section>-<role>"` |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
