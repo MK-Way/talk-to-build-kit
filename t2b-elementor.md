@@ -856,15 +856,46 @@ Run this once. Commit `design-tokens.json` to the project repo — it is the sty
 
 ### Step 3: Localize Images
 
-Before generating JSON, scan for external images and localize them (same as `/t2b-wordpress` Step 2–3):
+**First — build a complete image inventory.** Every image in this list must appear in the final JSON. No exceptions.
 
-```bash
-grep -oP 'src="https?://[^"]+\.(png|jpg|jpeg|gif|svg|webp)"' <HTML_FILE>
+```python
+import re
+
+def inventory_images(html_file):
+    with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+
+    images = []
+
+    # <img src="...">
+    for src in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content):
+        images.append({"type": "img-tag", "src": src})
+
+    # background-image: url(...) in inline styles or <style> blocks
+    for src in re.findall(r'background-image\s*:\s*url\(["\']?([^"\')\s]+)["\']?\)', content):
+        images.append({"type": "bg-image", "src": src})
+
+    # background: url(...) shorthand
+    for src in re.findall(r'background\s*:[^;]*url\(["\']?([^"\')\s]+)["\']?\)', content):
+        if src not in [i["src"] for i in images]:
+            images.append({"type": "bg-shorthand", "src": src})
+
+    print(f"Found {len(images)} images in {html_file}:")
+    for i, img in enumerate(images):
+        print(f"  [{i+1}] {img['type']:15} {img['src']}")
+    return images
+
+images = inventory_images("path/to/page.html")
 ```
 
-Download externals, upload to `/wp-content/uploads/<PROJECT>/`, rewrite URLs in the HTML.
+**Output this inventory list before doing anything else.** Then for each image:
+1. Download if external, copy if local
+2. Upload to `/wp-content/uploads/<PROJECT>/` via SCP
+3. Record the final WP URL
 
-In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...` — never external.
+Keep the inventory as a mapping: `{ original_src: wp_url }` — used in Step 4.1 to verify coverage.
+
+In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...` — never external, never relative paths from the source folder.
 
 ### Step 4: Generate Elementor JSON
 
@@ -872,12 +903,15 @@ In the Elementor JSON, all image URLs must be `/wp-content/uploads/<PROJECT>/...
 
 ```
 Page build checklist — [PAGE NAME]
+[ ] Image inventory from Step 3 is complete — every <img> and background-image listed
+[ ] All images uploaded to /wp-content/uploads/<project>/ and WP URLs recorded
 [ ] Using native Elementor widgets for ALL content (heading, text-editor, image, button, icon-box…)
 [ ] html widget NOT used for any heading, paragraph, image, or button
 [ ] html widget only if section has JS animation/SVG with no Elementor equivalent — documented with a comment
 [ ] Padding extracted from source CSS for every outer container — never padding=None on a section
 [ ] All colours verified against design-tokens.json
 [ ] Style verification (Step 4.1) will run before push
+[ ] Image coverage check (verify_image_coverage) will run before push
 ```
 
 Do not proceed until this checklist is printed and every item is confirmed. If any item cannot be confirmed, stop and resolve it first.
@@ -1105,8 +1139,36 @@ def verify_page_styles(json_file, tokens_file='design-tokens.json'):
         print(f"✅  {json_file} — all styles match design tokens")
         return True
 
-# Run before push:
+def verify_image_coverage(json_file, image_inventory):
+    """Check every image from the source HTML appears somewhere in the Elementor JSON.
+    image_inventory: list of wp_urls produced by Step 3 — e.g. ['/wp-content/uploads/rcas/hero.jpg', ...]
+    """
+    with open(json_file, 'r', encoding='utf-8') as f:
+        json_str = f.read()
+
+    missing = []
+    for wp_url in image_inventory:
+        filename = wp_url.split('/')[-1]  # check by filename — path may vary
+        if filename not in json_str:
+            missing.append(wp_url)
+
+    if missing:
+        print(f"⚠️  {len(missing)} image(s) from source NOT found in {json_file}:")
+        for url in missing:
+            print(f"  MISSING: {url}")
+        print("\nEvery source image must appear as an image widget URL or background_image URL in the JSON.")
+        return False
+    else:
+        print(f"✅  {json_file} — all {len(image_inventory)} source images present in JSON")
+        return True
+
+# Run both checks before push:
 verify_page_styles('generated/pages/home-data.json')
+verify_image_coverage('generated/pages/home-data.json', [
+    '/wp-content/uploads/rcas/hero-home.jpg',
+    '/wp-content/uploads/rcas/leadership-coaching.png',
+    # ... full list from Step 3 inventory
+])
 ```
 
 **If issues are found:** correct the JSON values to match the source design tokens. Only proceed to push when the verification passes — or when you have explicitly confirmed a value is an intentional override (e.g. a hover state or accessibility improvement).
@@ -1325,6 +1387,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-11 | Redis object cache not invalidated after direct DB write — `get_post_meta()` returns stale data even after `$wpdb->insert()` | `wp_cache_delete($page_id, 'post_meta')` added after every DB write in push script |
 | 2026-06-11 | `wp nginx-helper purge-all 2>/dev/null \|\| true` masked Nginx purge failures — old HTML + new CSS IDs = page broken | Removed silent suppression from Step 6; failure is now visible. Fallback: WP Admin → Nginx Helper → Purge All, or verify via Magic Login (logged-in users bypass cache) |
 | 2026-06-11 | `uid()` using `secrets.token_hex(4)` generates new random IDs on every run — Nginx-cached HTML has old IDs, regenerated CSS has new IDs, page breaks on every update | `uid(seed)` now uses `hashlib.md5(seed)[:8]` — IDs are deterministic per element, stable across re-runs. Seeds follow pattern `"<page>-<section>-<role>"` |
+| 2026-06-12 | Images skipped silently — sections pushed without images present in source HTML | Step 3 now builds a complete image inventory first; Step 4.1 runs `verify_image_coverage()` before every push to confirm all source images appear in the JSON |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
