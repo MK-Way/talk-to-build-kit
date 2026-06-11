@@ -1201,15 +1201,22 @@ Replace `<HOMEPAGE_SLUG>` with the actual page slug (e.g. `homepage` or `home`).
 
 ### Step 6: Flush CSS + Caches
 
-After any Elementor DB insert, Elementor's CSS cache must also be flushed — not just Redis/Nginx:
+After any Elementor DB insert or update, flush in this exact order:
 
 ```bash
-ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "cd ~/files && \
-  wp elementor flush_css && \
-  redis-cli --user <REDIS_USER> --pass '<REDIS_PASS>' FLUSHALL && \
-  wp cache flush && \
-  wp nginx-helper purge-all 2>/dev/null || true"
+ssh -i <YOUR_SSH_KEY_PATH> <SITE_USER>@<IP> "
+  wp --path=<SITE_PATH> elementor flush_css && echo 'Elementor CSS flushed' && \
+  wp --path=<SITE_PATH> cache flush        && echo 'WP object cache flushed' && \
+  wp --path=<SITE_PATH> nginx-helper purge-all && echo 'Nginx cache purged' || echo 'WARNING: nginx-helper purge failed — check plugin is active'
+"
 ```
+
+> ⚠️ **Do NOT use `2>/dev/null || true` on the nginx purge.** If `wp nginx-helper purge-all` fails silently, the Nginx cache serves the old HTML with new CSS IDs — the page breaks completely. The error must be visible so it can be fixed.
+
+**If `nginx-helper purge-all` fails** (permissions issue — cache files owned by a different system user):
+1. Log into WP Admin → Settings → Nginx Helper → click **Purge All** manually
+2. Or wait for the cache TTL to expire (typically 60 minutes on xCloud)
+3. Logged-in WP admin users always bypass Nginx cache — use Magic Login to verify the correct version immediately
 
 `wp elementor flush_css` regenerates the page's compiled CSS. Without this, the page may render without any styling.
 
@@ -1239,6 +1246,8 @@ curl -s https://<SITE>/<SLUG>/ | grep -c 'elementor-widget-'
 
 **If step 1 returns empty**: the push failed — re-run the push script and check for MySQL errors.
 **If step 1 has content but step 4 shows only 2 widgets**: Nginx cache is stale — run `wp nginx-helper purge-all` and recheck.
+
+> ⚠️ **Always verify in WP Admin, not just curl.** `curl` hits the Nginx cache and may return the stale version even after a successful push. Logged-in WordPress users bypass Nginx cache entirely. Use **Magic Login** (xCloud) or log into `/wp-admin/` to see the real current state of the page immediately after push.
 
 **Final check**: open the page in Elementor editor and confirm each section is editable. Spot-check 3 widgets — click to edit, confirm text/colour is accessible.
 
@@ -1303,6 +1312,7 @@ Mixed pages (some native widgets + some HTML fallback) are valid and common. Nat
 | 2026-06-11 | `elementor_experiment-container` is inactive by default in Elementor 4.1.x — every container renders empty, page shows nothing | Step 1 now checks and activates this experiment before any JSON is generated |
 | 2026-06-11 | `update_post_meta()` calls `wp_unslash()` internally, stripping `\"` from JSON and corrupting `_elementor_data` | Push script rewritten: use `$wpdb->insert()` / `$wpdb->delete()` directly — never `update_post_meta()` for Elementor data |
 | 2026-06-11 | Redis object cache not invalidated after direct DB write — `get_post_meta()` returns stale data even after `$wpdb->insert()` | `wp_cache_delete($page_id, 'post_meta')` added after every DB write in push script |
+| 2026-06-11 | `wp nginx-helper purge-all 2>/dev/null \|\| true` masked Nginx purge failures — old HTML + new CSS IDs = page broken | Removed silent suppression from Step 6; failure is now visible. Fallback: WP Admin → Nginx Helper → Purge All, or verify via Magic Login (logged-in users bypass cache) |
 | 2026-06-10 | Elementor 3.6+ containers (flexbox) do NOT render in Theme Builder context (header/footer templates) — content renders empty | Phase 0 always uses classic `section → column → html widget` format; containers only for regular page content (Steps 2+) |
 | 2026-06-10 | Elementor wraps Theme Builder header in `.elementor-location-header` block div — pushes content down even when original header CSS uses `position: fixed/absolute` | Step 0e.1 now mandatory: detect fixed/absolute header in source CSS and add `.elementor-location-header { position: fixed; }` fix to header template |
 | 2026-06-10 | HTML widget was applied to regular page content instead of native widgets — client cannot edit anything in Elementor | Added ❌ rule after Widget Mapping table and ⚠️ warning at top of Step 4: html widget is ONLY for Phase 0 and truly unmappable sections |
